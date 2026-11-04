@@ -1,3 +1,0 @@
-fastapi
-networkx
-pandas
