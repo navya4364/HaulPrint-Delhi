@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HaulPrint Delhi — Waste Transport-Emissions Simulator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    #map { height: 300px; width: 100%; border-radius: 0.75rem; z-index: 10; }
+    input[type=number] { width: 100%; }
+  </style>
+</head>
+<body class="bg-[#fcfbf9] text-stone-800 font-sans antialiased">
+
+  <header class="bg-[#11221c] text-white px-6 py-5">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      <div>
+        <h1 class="text-xl font-bold tracking-tight">HaulPrint Delhi</h1>
+        <p class="text-xs text-emerald-300">A Geospatial Transport-Emissions Simulator for Solid Waste in Delhi</p>
+      </div>
+      <p class="text-[11px] text-stone-300">Measure the carbon footprint of hauling waste</p>
+    </div>
+  </header>
+
+  <div class="bg-amber-50 border-b border-amber-200 px-6 py-2 text-[11px] text-amber-900">
+    <div class="max-w-7xl mx-auto"><b>Prototype notice:</b> All inputs are illustrative sample values, and results are calculated from them. This is not official data and the project is not affiliated with any government body. Change any input and every result updates.</div>
+  </div>
+
+  <main class="max-w-7xl mx-auto p-6 space-y-6">
+
+    <!-- How it works -->
+    <section class="bg-white border border-stone-200 rounded-2xl p-4 text-xs text-stone-600">
+      <b class="text-stone-800">How it works:</b>
+      1. Select a Delhi zone → 2. Enter waste, vehicle and route inputs → 3. All three scenarios are simulated instantly → 4. Compare environmental and economic impact → 5. See the recommended strategy.
+    </section>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- INPUTS -->
+      <section class="lg:col-span-5 bg-white border border-stone-200 rounded-2xl p-5 space-y-4 shadow-sm">
+        <div class="flex gap-2 items-center justify-between">
+          <h2 class="font-semibold text-xs uppercase tracking-wider">1. Zone and inputs</h2>
+          <button onclick="loadZone()" class="text-[11px] bg-stone-100 hover:bg-stone-200 px-3 py-1 rounded-lg font-medium">Reset to defaults</button>
+        </div>
+        <select id="zone" onchange="loadZone()" class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs font-medium">
+          <option>Vasant Kunj</option>
+          <option>Lajpat Nagar</option>
+        </select>
+        <div>
+          <label class="block text-[11px] font-medium text-stone-600">Distance source</label>
+          <select id="src" onchange="compute()" class="mt-1 w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs font-medium">
+            <option value="assumption">Scenario assumptions</option>
+            <option value="network">Network route model (Python backend)</option>
+          </select>
+          <p id="src-msg" class="text-[10px] text-stone-400 mt-1"></p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 text-[11px] font-medium text-stone-600">
+          <label>Waste generated (t/day)<input id="W" type="number" step="0.1" min="0" oninput="compute()" class="mt-1 border border-stone-300 rounded-lg px-2 py-1.5 text-xs"></label>
+          <label>Baseline route distance (km/day)<input id="D" type="number" step="1" min="0" oninput="compute()" class="mt-1 border border-stone-300 rounded-lg px-2 py-1.5 text-xs"></label>
+          <label>Vehicle mileage (km/L)<input id="mil" type="number" step="0.05" min="0.1" oninput="compute()" class="mt-1 border border-stone-300 rounded-lg px-2 py-1.5 text-xs"></label>
+          <label>Diesel price (₹/L)<input id="price" type="number" step="0.5" min="0" oninput="compute()" class="mt-1 border border-stone-300 rounded-lg px-2 py-1.5 text-xs"></label>
+          <label>Other running cost (₹/km)<input id="opkm" type="number" step="0.1" min="0" oninput="compute()" class="mt-1 border border-stone-300 rounded-lg px-2 py-1.5 text-xs"></label>
+          <label>Emission factor (kg CO₂/L)<input id="ef" type="number" step="0.01" min="0" oninput="compute()" class="mt-1 border border-stone-300 rounded-lg px-2 py-1.5 text-xs"></label>
+        </div>
+
+        <div>
+          <h3 class="text-[11px] font-semibold uppercase tracking-wider text-stone-500 mb-2">Scenario assumptions</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-[11px]">
+              <thead class="text-stone-500"><tr><th class="text-left font-medium pb-1">Scenario</th><th class="font-medium pb-1">Route distance cut (%)</th><th class="font-medium pb-1">Waste hauled (%)</th><th class="font-medium pb-1">Avg haul (km)</th></tr></thead>
+              <tbody id="scen-rows"></tbody>
+            </table>
+          </div>
+          <p class="text-[10px] text-stone-400 mt-2">Optimised: better routing cuts distance and empty trips. Decentralised: wet waste is processed locally, so less waste is hauled, and dry waste is compacted at a hub.</p>
+        </div>
+      </section>
+
+      <!-- RESULTS -->
+      <section class="lg:col-span-7 space-y-6">
+        <div class="bg-white border border-stone-200 rounded-2xl p-5 space-y-3 shadow-sm">
+          <h2 class="font-semibold text-xs uppercase tracking-wider">2. Scenario results (per day)</h2>
+          <div class="overflow-x-auto"><table class="w-full text-xs" id="results"></table></div>
+        </div>
+
+        <div class="bg-white border border-stone-200 rounded-2xl p-5 space-y-3 shadow-sm">
+          <h2 class="font-semibold text-xs uppercase tracking-wider">3. Before-and-after comparison (% of baseline)</h2>
+          <div style="height:260px"><canvas id="chart"></canvas></div>
+        </div>
+
+        <div class="bg-[#11221c] text-stone-100 rounded-2xl p-5 shadow-sm">
+          <span class="text-[10px] font-semibold text-emerald-400 uppercase tracking-widest">Recommended strategy</span>
+          <h3 id="rec-title" class="text-sm font-bold text-white mt-1"></h3>
+          <p id="rec-text" class="text-xs text-stone-300 mt-1"></p>
+        </div>
+      </section>
+    </div>
+
+    <!-- MAP -->
+    <section class="bg-white border border-stone-200 rounded-2xl p-5 space-y-3 shadow-sm">
+      <h2 class="font-semibold text-xs uppercase tracking-wider">Zone map</h2>
+      <div id="map"></div>
+      <p class="text-[10px] text-stone-400">Real OpenStreetMap base map. The boundary and collection route are illustrative, not actual ward geometry or road networks.</p>
+    </section>
+
+    <!-- METHOD -->
+    <section class="bg-white border border-stone-200 rounded-2xl p-5 space-y-3 text-xs text-stone-600 leading-relaxed shadow-sm">
+      <h2 class="font-semibold text-xs uppercase tracking-wider text-stone-800">Method, limitations and roadmap</h2>
+      <ul class="list-disc pl-5 space-y-1">
+        <li><b>Distance</b> = baseline km/day × (1 − route distance cut)</li>
+        <li><b>Fuel</b> = distance ÷ mileage</li>
+        <li><b>CO₂</b> = fuel × emission factor (an assumed diesel factor, editable above)</li>
+        <li><b>Transport cost</b> = fuel × diesel price + distance × other running cost (transport only; excludes the investment in composting units and hubs)</li>
+        <li><b>Tonne-km</b> = waste hauled (t) × average haul distance (km)</li>
+      </ul>
+      <p><b>Limitations:</b> static waste weights (no seasonal moisture effects); distances are assumed rather than from live traffic; emission factors are standard estimates; scenario percentages are assumptions to be replaced by routing results.</p>
+      <p><b>Backend:</b> choose “Network route model” to send the inputs to a Python (FastAPI) service. It builds a synthetic street grid with NetworkX, compares separate trips with consolidated loops (a travelling-salesman approximation), counts truck trips from load factors, and calculates fuel, CO₂, cost and tonne-km with Pandas. If the service is unavailable, the page falls back to the assumption-based results.</p>
+      <p><b>Roadmap:</b> replace the synthetic grid with real road networks and validate against real GPS logs from a pilot zone.</p>
+    </section>
+
+    <footer class="text-[11px] text-stone-400 text-center pb-6">HaulPrint Delhi — prototype with illustrative data</footer>
+  </main>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const NAMES = ['Baseline', 'Optimised Routes', 'Decentralised + Hub'];
+    const COLORS = ['#a8a29e', '#047857', '#d97706'];
+    const METRICS = [
+      ['dist', 'Distance', 'km'], ['fuel', 'Fuel', 'L'], ['co2', 'CO₂', 'kg'],
+      ['cost', 'Transport cost', '₹'], ['tkm', 'Tonne-km', 't-km']
+    ];
+    const ZONES = {
+      "Vasant Kunj": {
+        W: 30, D: 145, haul: [17, 14.33, 15], coords: [28.5294, 77.1591],
+        poly: [[28.5500, 77.1400], [28.5450, 77.1750], [28.5100, 77.1700], [28.5050, 77.1350]],
+        route: [[28.5350, 77.1420], [28.5280, 77.1520], [28.5210, 77.1630], [28.5300, 77.1750]]
+      },
+      "Lajpat Nagar": {
+        W: 28, D: 118, haul: [16, 13.5, 14], coords: [28.5681, 77.2435],
+        poly: [[28.5800, 77.2300], [28.5750, 77.2600], [28.5550, 77.2550], [28.5580, 77.2280]],
+        route: [[28.5700, 77.2320], [28.5650, 77.2420], [28.5600, 77.2500], [28.5550, 77.2550]]
+      }
+    };
+    let map, layer, chart, raw = [];
+
+    const num = id => parseFloat($(id).value) || 0;
+    const fmt = n => n.toLocaleString('en-IN');
+    const pct = (v, b) => {
+      const p = b ? Math.round((v - b) / b * 100) : 0;
+      return (p > 0 ? '+' : p < 0 ? '−' : '') + Math.abs(p) + '%';
+    };
+
+    function buildScenarioRows() {
+      const inp = (id, dis) => `<input id="${id}" type="number" step="any" min="0" ${dis ? 'disabled' : 'oninput="compute()"'} class="border border-stone-300 rounded-lg px-1.5 py-1 text-xs text-center ${dis ? 'bg-stone-100 text-stone-400' : ''}">`;
+      $('scen-rows').innerHTML = NAMES.map((n, i) =>
+        `<tr><td class="pr-2 py-1 font-medium text-stone-700">${n}</td>
+         <td class="px-1">${inp('red' + i, i === 0)}</td>
+         <td class="px-1">${inp('hp' + i, i === 0)}</td>
+         <td class="px-1">${inp('hk' + i, false)}</td></tr>`).join('');
+    }
+
+    function loadZone() {
+      const z = ZONES[$('zone').value];
+      $('W').value = z.W; $('D').value = z.D;
+      $('mil').value = 3.05; $('price').value = 88; $('opkm').value = 2.3; $('ef').value = 2.69;
+      [0, 18.5, 36.5].forEach((v, i) => $('red' + i).value = v);
+      [100, 100, 70].forEach((v, i) => $('hp' + i).value = v);
+      z.haul.forEach((v, i) => $('hk' + i).value = v);
+      updateMap();
+      compute();
+    }
+
+    function compute() {
+      const W = num('W'), D = num('D'), mil = Math.max(num('mil'), 0.1);
+      const price = num('price'), opkm = num('opkm'), ef = num('ef');
+
+      const R = NAMES.map((n, i) => {
+        const dist = Math.round(D * (1 - num('red' + i) / 100));
+        const fuel = Math.round(dist / mil);
+        const co2 = Math.round(fuel * ef);
+        const cost = Math.round((fuel * price + dist * opkm) / 10) * 10;
+        const tkm = Math.round(W * num('hp' + i) / 100 * num('hk' + i));
+        return { dist, fuel, co2, cost, tkm };
+      });
+
+      if ($('src').value === 'network') { fetchNetwork(R); return; }
+      $('src-msg').textContent = 'Distances come from the scenario assumptions below.';
+      render(R);
+    }
+
+    const API = location.protocol === 'file:' ? 'http://127.0.0.1:8000/api' : '/api';
+    let netTimer;
+    function fetchNetwork(fallback) {
+      clearTimeout(netTimer);
+      netTimer = setTimeout(async () => {
+        try {
+          const res = await fetch(API + '/simulate', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              zone: $('zone').value, waste_t: num('W'), mileage: num('mil'), diesel_price: num('price'),
+              other_cost_per_km: num('opkm'), emission_factor: num('ef'), haul_km: num('hk0'),
+              local_share_pct: 100 - num('hp2')
+            })
+          });
+          if (!res.ok) throw new Error('bad response');
+          const data = await res.json();
+          $('src-msg').textContent = 'Distances computed by the Python backend (NetworkX route model on a synthetic street grid). Route distance cut and Avg haul of the optimised scenarios are not used in this mode.';
+          render(data.results);
+        } catch (e) {
+          $('src-msg').textContent = 'Backend not reachable, so the assumption-based results are shown instead.';
+          render(fallback);
+        }
+      }, 250);
+    }
+
+    function render(R) {
+      // Results table
+      $('results').innerHTML =
+        `<thead><tr class="text-stone-500 border-b border-stone-200"><th class="text-left py-2 font-medium">Metric</th>` +
+        NAMES.map((n, i) => `<th class="py-2 font-semibold" style="color:${COLORS[i]}">${n}</th>`).join('') + `</tr></thead><tbody>` +
+        METRICS.map(([k, l, u]) =>
+          `<tr class="border-b border-stone-100"><td class="py-2 text-stone-600">${l} <span class="text-stone-400">(${u}/day)</span></td>` +
+          R.map((r, i) => `<td class="py-2 text-center"><span class="font-bold text-stone-900">${k === 'cost' ? '₹ ' : ''}${fmt(r[k])}</span>` +
+            (i ? `<div class="text-[10px] font-medium ${r[k] <= R[0][k] ? 'text-emerald-700' : 'text-red-600'}">${pct(r[k], R[0][k])}</div>` : '<div class="text-[10px] text-stone-400">reference</div>') +
+            `</td>`).join('') + `</tr>`).join('') + `</tbody>`;
+
+      // Chart (percent of baseline)
+      raw = NAMES.map((n, i) => METRICS.map(([k]) => R[i][k]));
+      if (chart) {
+        chart.data.datasets.forEach((ds, i) => {
+          ds.data = METRICS.map(([k]) => R[0][k] ? Math.round(R[i][k] / R[0][k] * 100) : 0);
+        });
+        chart.update();
+      }
+
+      // Recommendation: lowest CO2, then lowest cost
+      let b = 0;
+      R.forEach((r, i) => { if (r.co2 < R[b].co2 || (r.co2 === R[b].co2 && r.cost < R[b].cost)) b = i; });
+      $('rec-title').textContent = b === 0 ? 'No improvement found with the current inputs' : NAMES[b] + ' for ' + $('zone').value;
+      $('rec-text').textContent = b === 0
+        ? 'Adjust the scenario assumptions to explore how routing and local processing change the result.'
+        : `Compared with the baseline: distance ${pct(R[b].dist, R[0].dist)}, fuel ${pct(R[b].fuel, R[0].fuel)}, CO₂ ${pct(R[b].co2, R[0].co2)}, transport cost ${pct(R[b].cost, R[0].cost)}, tonne-km ${pct(R[b].tkm, R[0].tkm)}.`;
+    }
+
+    function updateMap() {
+      if (!map) return;
+      const z = ZONES[$('zone').value];
+      layer.clearLayers();
+      L.polygon(z.poly, { color: '#047857', weight: 2, fillColor: '#34d399', fillOpacity: 0.3 })
+        .bindPopup('<b>' + $('zone').value + '</b><br><i>Illustrative boundary</i>').addTo(layer);
+      L.polyline(z.route, { color: '#2563eb', weight: 3.5, dashArray: '4, 4' })
+        .bindPopup('Illustrative collection route').addTo(layer);
+      map.setView(z.coords, 13);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      buildScenarioRows();
+      map = L.map('map').setView(ZONES['Vasant Kunj'].coords, 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, attribution: '© OpenStreetMap contributors'
+      }).addTo(map);
+      layer = L.layerGroup().addTo(map);
+
+      if (window.Chart) {
+        chart = new Chart($('chart'), {
+          type: 'bar',
+          data: {
+            labels: METRICS.map(m => m[1]),
+            datasets: NAMES.map((n, i) => ({ label: n, backgroundColor: COLORS[i], data: [] }))
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: { y: { beginAtZero: true, suggestedMax: 110, title: { display: true, text: '% of baseline' } } },
+            plugins: { tooltip: { callbacks: { label: c =>
+              `${c.dataset.label}: ${c.raw}% of baseline (${fmt(raw[c.datasetIndex][c.dataIndex])})` } } }
+          }
+        });
+      }
+      loadZone();
+    });
+  </script>
+</body>
+</html>

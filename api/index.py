@@ -137,6 +137,3 @@ def health():
 @app.post("/api/simulate")
 def simulate_endpoint(body: dict):
     return {"mode": "network", "results": simulate(body)}
-@app.get("/")
-def root():
-    return {"status": "ok", "app": "HaulPrint Delhi"}
